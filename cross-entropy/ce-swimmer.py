@@ -1,3 +1,4 @@
+
 import gym
 import numpy as np
 
@@ -5,8 +6,8 @@ import operator
 import heapq
 
 """
-    Implementation of cross entropy method applied to the Cart Pole
-    environment, as described by [1], at exercise 2.1.1.
+    Implementation of cross entropy method+noise variation applied to 
+    the Swimmer continuous environment, as described by [1], at exercise 2.1.2.
 
     References: experiment done by @devforfu [2], thank you!
 
@@ -15,21 +16,24 @@ import heapq
 """
 
 class DiscretePolicyLearner:
-    def __init__(self, env, elite_rate, samples):
+    def __init__(self, env, elite_rate, samples, decay=10, extra_v=2.0):
         self.env = env
         self.elite_s = int(elite_rate*samples)
         self.samples = samples
 
         dim_env = env.observation_space.shape[0]+1 # dimension of observations parameters
-        dim_act = env.action_space.n               # dimension of possible actions
+        dim_act = env.action_space.shape[0]        # dimension of possible actions
 
         self.std = np.ones(dim_env*dim_act)
-        self.mean = np.zeros(dim_env    *dim_act)
+        self.mean = np.zeros(dim_env*dim_act)
+
+        self.decay = decay
+        self.extra_v = extra_var
 
     # generate thetas for number of samples
-    def generate_t(self):
+    def generate_t(self, noise):
         # fit covariance matrix over a gaussian distribution
-        cov = np.diag(np.array(self.std**2))
+        cov = np.diag(np.array(noise+self.std**2))
 
         # initialize mean and standard deviation
         theta = np.random.multivariate_normal(mean=self.mean,
@@ -41,13 +45,16 @@ class DiscretePolicyLearner:
 
     def sample(self, state, weights):
         dim_env = self.env.observation_space.shape[0]
-        dim_act = self.env.action_space.n
+        dim_act = self.env.action_space.shape[0]
 
         W = weights[0 : dim_env*dim_act].reshape(dim_env, dim_act)
         b = weights[dim_env*dim_act:(dim_env+1)*dim_act].reshape(1, dim_act)
 
+        low = env.action_space.low
+        high = env.action_space.high
+
         res = state.dot(W) + b
-        a = res.argmax()
+        a = np.clip(res, low, high) # set a limit to choose valid action
 
         return a
 
@@ -70,8 +77,9 @@ class DiscretePolicyLearner:
 
     def learn(self, simulations):
         for i in range(simulations):
-            # generate weights
-            thetas = self.generate_t()
+            # generate weights, while gradually decaying noise to zero
+            noise = max(1.0 - i/self.decay, 0) * self.extra_v**2
+            thetas = self.generate_t(noise)
 
             rewards = np.array(map(self.noisy_evaluation, thetas))
 
@@ -93,11 +101,13 @@ class DiscretePolicyLearner:
         return weights, reward
 
 if __name__ == '__main__':
-    env = gym.make('CartPole-v0')
+    env = gym.make('Swimmer-v1')
 
-    total_it = 10       # total iterations
+    total_it = 30       # total iterations
     samples = 50        # similar to batch size
     elite_rate = 0.2    # rate of elite set
+    extra_var = 2.0     # extra variance to be applied
+    noise_decay = 10    # decay noise from variance
 
     pol = DiscretePolicyLearner(env, elite_rate, samples)
 
